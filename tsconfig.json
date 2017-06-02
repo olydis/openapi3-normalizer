@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "lib": [
+            "es2016"
+        ],
+        "module": "commonjs",
+        "strict": true,
+        "types": [
+            "node"
+        ]
+    },
+    "exclude": [
+        "node_modules"
+    ]
+}

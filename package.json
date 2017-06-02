@@ -1,0 +1,31 @@
+{
+  "name": "openapi3-normalizer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "get-uri": "^2.0.0",
+    "js-yaml": "^3.8.4",
+    "openapi3-ts": "^0.2.1",
+    "pify": "^3.0.0",
+    "strip-bom": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^3.5.30",
+    "@types/node": "^7.0.26",
+    "@types/pify": "0.0.28"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/olydis/openapi3-normalizer.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/olydis/openapi3-normalizer/issues"
+  },
+  "homepage": "https://github.com/olydis/openapi3-normalizer#readme"
+}
