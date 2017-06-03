@@ -1,4 +1,5 @@
-import { run } from './modeler';
+import { resolve } from "./object-resolver";
+import { run } from "./modeler";
 import { safeDump, safeLoad } from "js-yaml";
 import { Readable } from "stream";
 import { OpenAPIObject } from "./types/openapi";
@@ -39,6 +40,9 @@ async function main() {
   try {
     const rawDef = await ReadUri("https://raw.githubusercontent.com/OAI/OpenAPI-Specification/OpenAPI.next/examples/v3.0/petstore-expanded.yaml");
     const def: OpenAPIObject = safeLoad(rawDef);
+    // console.log(safeDump(def, { skipInvalid: true }));
+    resolve(def);
+    // console.log(safeDump(def, { skipInvalid: true }));
     const model = run(def);
     console.log(safeDump(model, { skipInvalid: true }));
   } catch (e) {

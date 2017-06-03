@@ -1,4 +1,14 @@
-import { OpenAPIObject, ParameterObject, ServerObject, ServerVariableObject } from './types/OpenApi';
+import {
+  ExternalDocumentationObject,
+  HeaderObject,
+  LinkObject,
+  OpenAPIObject,
+  ParameterObject,
+  ResponseObject,
+  ServerObject,
+  ServerVariableObject,
+  TagObject
+} from "./types/OpenApi";
 
 function throwEx(errorMessage?: string): never {
   throw new Error(errorMessage);
@@ -13,15 +23,23 @@ type PathComponentConstant = { type: "const", value: string };
 type PathComponentParameter = { type: "param", name: string };
 
 
-
-interface Parameter {
+interface Header {
   name: string;
-  location: "query" | "header" | "path" | "cookie";
   description?: string;
   required: boolean;
   deprecated: boolean;
   locationQueryAllowEmptyValue?: boolean;
   content: any; // TODO
+}
+
+interface Response {
+  key: string;
+  description?: string;
+  headers: Header[];
+}
+
+interface Parameter extends Header {
+  location: "query" | "header" | "path" | "cookie";
 }
 
 interface Server {
@@ -31,13 +49,23 @@ interface Server {
 }
 
 interface Method {
-  servers: Server[];
   urlSuffix: Path;
+  tags: string[];
+  summary?: string;
+  description?: string;
+  externalDocs?: ExternalDocumentationObject;
+  operationId?: string;
+  responses: Response[];
   parameters: Parameter[];
+
+  deprecated: boolean;
+
+  servers: Server[];
 }
 
 export interface Model {
   operations: Method[];
+  tags: TagObject[];
 }
 
 function parsePath(path: string): Path {
@@ -109,16 +137,17 @@ export function run(openapiDefinition: OpenAPIObject): Model {
   if (openapiDefinition.openapi !== "3.0.0") throw new Error("this modeler is for OpenAPI 3.0.0, found " + openapiDefinition.openapi);
 
   const result: Model = {
-    operations: []
+    operations: [],
+    tags: openapiDefinition.tags || []
   };
   const servers = parseServers(openapiDefinition.servers) || [];
   if (servers.length === 0) servers.push({ urlPrefix: parsePath("/"), variables: {} });
 
+  // info
+  // TODO: openapiDefinition.info
+
   // security
   // TODO: openapiDefinition.security
-
-  // tags
-  // TODO: openapiDefinition.tags
 
   // externalDocs
   // TODO: openapiDefinition.externalDocs
@@ -130,6 +159,8 @@ export function run(openapiDefinition: OpenAPIObject): Model {
   for (const rawPath of Object.keys(openapiDefinition.paths)) {
     const path: Path = parsePath(rawPath);
     const pathObject = openapiDefinition.paths[rawPath];
+    const pathSummary = pathObject.summary;
+    const pathDescription = pathObject.description;
     const pathServers = parseServers(pathObject.servers) || servers;
     const pathParameters = parseParameters(pathObject.parameters as ParameterObject[]) || [];
     if (!checkParameters(pathParameters)) throw new Error("invalid path parameters");
@@ -160,10 +191,67 @@ export function run(openapiDefinition: OpenAPIObject): Model {
           }
         }
 
+        // validate path parameters against urlSuffix
+        const pathParams = parameters.filter(x => x.location === "path").map(x => x.name).sort();
+        const pathParamsExpected = path.map(x => x.type === "param" ? x.name : null).filter(x => x !== null).sort();
+        if (pathParams.length !== pathParamsExpected.length || !pathParams.every((x, i) => x === pathParamsExpected[i])) {
+          throw new Error("path parameters mismatch");
+        }
+
+        // TODO: operationObject.requestBody?
+        // TODO: operationObject.callbacks?
+        // TODO: operationObject.security? (overrides toplevel one)
+
+        // responses
+        const responses: Response[] = [];
+        const responseKeys = Object.keys(operationObject.responses);
+        for (let responseKey of responseKeys) {
+          const responseObject = operationObject.responses[responseKey] as ResponseObject;
+
+          if (responseKey === "default") responseKey = "XXX";
+          if (!responseKey.match(/^[0-9X]{3}$/)) throw new Error(`invalid HTTP status code pattern '${responseKey}'`);
+
+          // headers
+          const headers = responseObject.headers || {};
+          const headerNames = Object.keys(headers);
+          const headersAsParams = headerNames.map(name => {
+            const param = headers[name] as ParameterObject;
+            param.name = name;
+            param.in = "header";
+            const result = parseParameter(param);
+            delete result.location; // implicitly "header"
+            return result as Header;
+          });
+
+          // TODO:
+          // responseObject.content
+
+          // links
+          const links = responseObject.links || {};
+          const linkNames = Object.keys(links);
+          // TODO
+
+          responses.push({
+            key: responseKey,
+            description: responseObject.description,
+            headers: headersAsParams
+          });
+        }
+        // sort responses descending by significance
+        responses.sort((a, b) => a.key.split("").filter(c => c === "X").length - b.key.split("").filter(c => c === "X").length);
+
         result.operations.push({
           urlSuffix: path,
-          servers: operationServers,
-          parameters: parameters
+
+          tags: operationObject.tags || [],
+          summary: operationObject.summary || pathSummary,
+          description: operationObject.description || pathDescription,
+          externalDocs: operationObject.externalDocs,
+          operationId: operationObject.operationId,
+          parameters: parameters,
+          responses: responses,
+          deprecated: operationObject.deprecated || false,
+          servers: operationServers
         });
       }
     }
