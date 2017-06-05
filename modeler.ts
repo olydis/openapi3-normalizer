@@ -1,14 +1,22 @@
 import {
+  ContentObject,
+  ExampleObject,
   ExternalDocumentationObject,
   HeaderObject,
+  InfoObject,
   LinkObject,
   OpenAPIObject,
   ParameterObject,
+  ReferenceObject,
+  RequestBodyObject,
   ResponseObject,
+  SchemaObject,
+  SecurityRequirementObject,
+  SecuritySchemeObject,
   ServerObject,
   ServerVariableObject,
   TagObject
-} from "./types/OpenApi";
+} from './types/OpenApi';
 
 function throwEx(errorMessage?: string): never {
   throw new Error(errorMessage);
@@ -23,23 +31,10 @@ type PathComponentConstant = { type: "const", value: string };
 type PathComponentParameter = { type: "param", name: string };
 
 
-interface Header {
-  name: string;
-  description?: string;
-  required: boolean;
-  deprecated: boolean;
-  locationQueryAllowEmptyValue?: boolean;
-  content: any; // TODO
-}
-
 interface Response {
   key: string;
   description?: string;
   headers: Header[];
-}
-
-interface Parameter extends Header {
-  location: "query" | "header" | "path" | "cookie";
 }
 
 interface Server {
@@ -59,11 +54,19 @@ interface Method {
   parameters: Parameter[];
 
   deprecated: boolean;
-
+  security: SecurityRequirementsAlternatives;
   servers: Server[];
 }
 
+interface SecurityRequirement {
+  scheme: SecuritySchemeObject;
+  scopes: string[];
+}
+type SecurityRequirements = SecurityRequirement[];
+type SecurityRequirementsAlternatives = SecurityRequirements[];
+
 export interface Model {
+  info: InfoObject;
   operations: Method[];
   tags: TagObject[];
 }
@@ -94,28 +97,137 @@ function parseServers(servers?: ServerObject[]): Server[] | undefined {
   return servers ? servers.map(parseServer) : undefined;
 }
 
-interface MediaTypeObject {
-  style: "form"
+interface Schema {
+
 }
 
-function parseParameter(parameter: ParameterObject): Parameter {
+interface Encoding {
+  contentType: string;
+  headers: Header[];
+  format: Format;
+  allowReserved: boolean;
+}
+
+interface MediaTypeContent {
+  schema?: Schema;
+  examples: { [mediatype: string]: ExampleObject };
+  encoding: { [property: string]: Encoding };
+}
+
+interface Content {
+  [mediatype: string]: MediaTypeContent;
+}
+
+interface ParameterCommonBase {
+  description?: string;
+  content: Content;
+  required: boolean;
+}
+
+interface Format {
+  style: "matrix" | "label" | "form" | "simple" | "spaceDelimited" | "pipeDelimited" | "deepObject";
+  explode: boolean;
+}
+
+interface ParameterBase extends ParameterCommonBase {
+  name: string;
+  deprecated: boolean;
+  format: Format;
+}
+
+interface Header extends ParameterBase { }
+
+interface ParameterQuery extends ParameterBase {
+  location: "query";
+  allowEmptyValue: boolean;
+  allowReserved: boolean;
+}
+interface ParameterHeader extends ParameterBase {
+  location: "header";
+}
+interface ParameterPath extends ParameterBase {
+  location: "path";
+}
+interface ParameterCookie extends ParameterBase {
+  location: "cookie";
+}
+type Parameter = ParameterQuery | ParameterHeader | ParameterPath | ParameterCookie;
+
+interface ParameterBody extends ParameterCommonBase { }
+
+function normalizeExamples(obj: {
+  examples?: { [mediatype: string]: ExampleObject | ReferenceObject; };
+  example?: ExampleObject | ReferenceObject;
+}): { [mediatype: string]: ExampleObject } {
+  const examples: { [mediatype: string]: ExampleObject } = obj.examples as any /*no ReferenceObject*/ || {};
+  if (obj.example) examples[""] = { value: obj.example };
+  return examples;
+}
+
+function parseSchema(schema: SchemaObject): Schema {
+  return schema; // TODO
+}
+
+function normalizeFormat(location: "query" | "header" | "path" | "cookie", obj: {
+  style?: "matrix" | "label" | "form" | "simple" | "spaceDelimited" | "pipeDelimited" | "deepObject";
+  explode?: boolean;
+}): Format {
+  const style = obj.style || ((location === "query" || location === "cookie") ? "form" : "simple");
+  const explode = obj.explode || (style === "form");
+  return {
+    style: style,
+    explode: explode
+  }
+}
+
+function parseParameterBase(parameter: ParameterObject): ParameterBase {
+  const location = parameter.in;
+
   // validate
-  if (parameter.in !== "query" && parameter.allowEmptyValue !== undefined) throw new Error("allowEmptyValue only allowed on query parameters");
-  if (parameter.in === "path" && !parameter.required) throw new Error("expected required=true on path parameter");
+  if (location === "path" && !parameter.required) throw new Error("expected required=true on path parameter");
 
   // normalize
-  const content: { [mediaType: string]: MediaTypeObject } = {};
-  // TODO: handle style, explode, allowReserved, schema, example, examples, content
+  const style = parameter.style || ((location === "query" || location === "cookie") ? "form" : "simple");
+  const explode = parameter.explode || (style === "form");
+  const examples = normalizeExamples(parameter);
+  const content: Content = parameter.content ? parseContent(parameter.content) : {};
+  content[""] = { schema: parameter.schema ? parseSchema(parameter.schema) : undefined, examples: examples, encoding: {} };
 
   return {
     name: parameter.name,
-    location: parameter.in,
     description: parameter.description,
     required: parameter.required || false,
     deprecated: parameter.deprecated || false,
-    locationQueryAllowEmptyValue: parameter.allowEmptyValue,
-    content: content
+    content: content,
+    format: {
+      style: style,
+      explode: explode
+    }
   };
+}
+
+function parseHeader(name: string, header: HeaderObject): Header {
+  const param = header as ParameterObject;
+  param.name = name;
+  param.in = "header";
+  return parseParameterBase(param);
+}
+
+function parseParameter(parameter: ParameterObject): Parameter {
+  const location = parameter.in;
+  const base: ParameterBase = parseParameterBase(parameter);
+
+  switch (location) {
+    case "query":
+      return Object.assign(base, {
+        location: location,
+        allowEmptyValue: parameter.allowEmptyValue || false,
+        allowReserved: parameter.allowReserved || false
+      });
+    case "header": return Object.assign(base, { location: location });
+    case "path": return Object.assign(base, { location: location });
+    case "cookie": return Object.assign(base, { location: location });
+  }
 }
 function parseParameters(parameters?: ParameterObject[]): Parameter[] | undefined {
   return parameters ? parameters.map(parseParameter) : undefined;
@@ -133,21 +245,57 @@ function checkParameters(parameter: Parameter[]): boolean {
   return unique;
 }
 
+function keys(o: any): string[] {
+  return Object.keys(o).filter(x => true); // TODO
+}
+
+function parseSecurityRequirements(securitySchemes: { [securityScheme: string]: SecuritySchemeObject }, security?: SecurityRequirementObject[]): SecurityRequirementsAlternatives | undefined {
+  const securityAlternatives: SecurityRequirementsAlternatives = [];
+  if (!security) return undefined;
+  for (const sec of security) {
+    const security: SecurityRequirements = [];
+    for (const name of keys(sec)) {
+      const securityScheme = securitySchemes[name];
+      if (!securityScheme) throw new Error(`security scheme '${name}' not found`);
+      security.push({
+        scheme: securityScheme,
+        scopes: sec[name]
+      });
+    }
+    securityAlternatives.push(security);
+  }
+  return securityAlternatives;
+}
+
+function parseContent(content: ContentObject): Content {
+  const result: Content = {};
+  for (const mediaType of keys(content)) {
+    const contentObj = content[mediaType];
+    result[mediaType] = {
+      schema: parseSchema(contentObj.schema || {}),
+      encoding: {}, // TODO
+      examples: normalizeExamples(content)
+    };
+  }
+  return result;
+}
+
 export function run(openapiDefinition: OpenAPIObject): Model {
   if (openapiDefinition.openapi !== "3.0.0") throw new Error("this modeler is for OpenAPI 3.0.0, found " + openapiDefinition.openapi);
 
+  // security schemes
+  const securitySchemes = openapiDefinition.components.securitySchemes || {};
+
   const result: Model = {
     operations: [],
-    tags: openapiDefinition.tags || []
+    tags: openapiDefinition.tags || [],
+    info: openapiDefinition.info
   };
   const servers = parseServers(openapiDefinition.servers) || [];
   if (servers.length === 0) servers.push({ urlPrefix: parsePath("/"), variables: {} });
 
-  // info
-  // TODO: openapiDefinition.info
-
   // security
-  // TODO: openapiDefinition.security
+  const security: SecurityRequirementsAlternatives = parseSecurityRequirements(securitySchemes, openapiDefinition.security) || [];
 
   // externalDocs
   // TODO: openapiDefinition.externalDocs
@@ -156,7 +304,7 @@ export function run(openapiDefinition: OpenAPIObject): Model {
   // TODO: openapiDefinition.components
 
   // operations
-  for (const rawPath of Object.keys(openapiDefinition.paths)) {
+  for (const rawPath of keys(openapiDefinition.paths)) {
     const path: Path = parsePath(rawPath);
     const pathObject = openapiDefinition.paths[rawPath];
     const pathSummary = pathObject.summary;
@@ -198,13 +346,24 @@ export function run(openapiDefinition: OpenAPIObject): Model {
           throw new Error("path parameters mismatch");
         }
 
+        // request body
+        let requestBody: ParameterBody | undefined = undefined;
+        if (operationObject.requestBody) {
+          requestBody = {
+            description: (operationObject.requestBody as RequestBodyObject).description,
+            content: parseContent((operationObject.requestBody as RequestBodyObject).content),
+            required: (operationObject.requestBody as RequestBodyObject).required || false
+          };
+        }
         // TODO: operationObject.requestBody?
         // TODO: operationObject.callbacks?
-        // TODO: operationObject.security? (overrides toplevel one)
+
+        // security
+        const operationSecurity = parseSecurityRequirements(securitySchemes, operationObject.security) || security;
 
         // responses
         const responses: Response[] = [];
-        const responseKeys = Object.keys(operationObject.responses);
+        const responseKeys = keys(operationObject.responses);
         for (let responseKey of responseKeys) {
           const responseObject = operationObject.responses[responseKey] as ResponseObject;
 
@@ -213,22 +372,15 @@ export function run(openapiDefinition: OpenAPIObject): Model {
 
           // headers
           const headers = responseObject.headers || {};
-          const headerNames = Object.keys(headers);
-          const headersAsParams = headerNames.map(name => {
-            const param = headers[name] as ParameterObject;
-            param.name = name;
-            param.in = "header";
-            const result = parseParameter(param);
-            delete result.location; // implicitly "header"
-            return result as Header;
-          });
+          const headerNames = keys(headers);
+          const headersAsParams = headerNames.map(name => parseHeader(name, headers[name] as HeaderObject));
 
           // TODO:
           // responseObject.content
 
           // links
           const links = responseObject.links || {};
-          const linkNames = Object.keys(links);
+          const linkNames = keys(links);
           // TODO
 
           responses.push({
@@ -249,8 +401,12 @@ export function run(openapiDefinition: OpenAPIObject): Model {
           externalDocs: operationObject.externalDocs,
           operationId: operationObject.operationId,
           parameters: parameters,
+          requestBody: requestBody,
+
           responses: responses,
+
           deprecated: operationObject.deprecated || false,
+          security: operationSecurity,
           servers: operationServers
         });
       }

@@ -9,7 +9,7 @@ export interface OpenAPIObject extends ISpecificationExtension {
   servers?: ServerObject[];
   paths: PathObject;
   components: ComponentsObject;
-  security?: SecurityRequirementObject;
+  security?: SecurityRequirementObject[];
   tags?: TagObject[];
   externalDocs?: ExternalDocumentationObject;
 }
@@ -41,15 +41,15 @@ export interface ServerVariableObject extends ISpecificationExtension {
   description?: string;
 }
 export interface ComponentsObject extends ISpecificationExtension {
-  schemas: { [schema: string]: SchemaObject };
-  responses: { [response: string]: ResponseObject };
-  parameters: { [parameter: string]: ParameterObject };
-  examples: { [example: string]: ExampleObject };
-  requestBodies: { [request: string]: RequestBodyObject };
-  headers: { [heaer: string]: HeaderObject };
-  securitySchemes: { [securityScheme: string]: SecuritySchemeObject };
-  links: { [link: string]: LinkObject };
-  callbacks: { [callback: string]: CallbackObject };
+  schemas?: { [schema: string]: SchemaObject };
+  responses?: { [response: string]: ResponseObject };
+  parameters?: { [parameter: string]: ParameterObject };
+  examples?: { [example: string]: ExampleObject };
+  requestBodies?: { [request: string]: RequestBodyObject };
+  headers?: { [heaer: string]: HeaderObject };
+  securitySchemes?: { [securityScheme: string]: SecuritySchemeObject };
+  links?: { [link: string]: LinkObject };
+  callbacks?: { [callback: string]: CallbackObject };
 }
 export interface PathObject extends ISpecificationExtension {
   [path: string]: PathItemObject;
@@ -80,7 +80,7 @@ export interface OperationObject extends ISpecificationExtension {
   responses: ResponsesObject;
   callbacks?: CallbacksObject;
   deprecated?: boolean;
-  security?: SecurityRequirementObject;
+  security?: SecurityRequirementObject[];
   servers?: ServerObject[];
 }
 export interface ExternalDocumentationObject extends ISpecificationExtension {
@@ -99,13 +99,13 @@ export interface ParameterObject extends ISpecificationExtension {
   explode?: boolean;
   allowReserved?: boolean;
   schema?: SchemaObject | ReferenceObject;
-  examples?: [ExampleObject | ReferenceObject];
-  example?: ExampleObject | ReferenceObject;
+  examples?: { [mediatype: string]: ExampleObject | ReferenceObject; };
+  example?: any;
   content?: ContentObject;
 }
 export interface RequestBodyObject extends ISpecificationExtension {
   description?: string;
-  content?: ContentObject;
+  content: ContentObject;
   required?: boolean;
 }
 export interface ContentObject {
@@ -113,7 +113,7 @@ export interface ContentObject {
 }
 export interface MediaTypeObject extends ISpecificationExtension {
   schema?: SchemaObject | ReferenceObject;
-  examples?: [ExampleObject | ReferenceObject];
+  examples?: { [mediatype: string]: ExampleObject | ReferenceObject; };
   example?: ExampleObject | ReferenceObject;
   encoding?: EncodingObject;
 }
@@ -147,7 +147,10 @@ export interface HeadersObject {
   [name: string]: HeaderObject | ReferenceObject;
 }
 export interface ExampleObject {
-  [property: string]: any;
+  summary?: string;
+  description?: string;
+  value: any;
+  externalValue?: string;
 }
 export interface LinksObject {
   [name: string]: LinkObject | ReferenceObject;
@@ -206,14 +209,27 @@ export interface XmlObject extends ISpecificationExtension {
   attribute: boolean;
   wrapped: boolean;
 }
-export interface SecuritySchemeObject extends ISpecificationExtension {
-  type: string;
+export type SecuritySchemeObject = SecuritySchemeObjectApiKey | SecuritySchemeObjectHttp | SecuritySchemeObjectOAuth2 | SecuritySchemeObjectOpenIdConnect;
+export interface SecuritySchemeObjectApiKey extends ISpecificationExtension {
+  type: "apiKey";
+  description?: string;
   name?: string;
   in?: string;
+}
+export interface SecuritySchemeObjectHttp extends ISpecificationExtension {
+  type: "http";
   description?: string;
   scheme?: string;
   bearerFormat?: string;
+}
+export interface SecuritySchemeObjectOAuth2 extends ISpecificationExtension {
+  type: "oauth2";
+  description?: string;
   flow?: OAuthFlowObject;
+}
+export interface SecuritySchemeObjectOpenIdConnect extends ISpecificationExtension {
+  type: "openIdConnect";
+  description?: string;
   openIdConnectUrl?: string;
 }
 export interface OAuthFlowsObject extends ISpecificationExtension {
@@ -232,5 +248,5 @@ export interface ScopesObject extends ISpecificationExtension {
   [scope: string]: string;
 }
 export interface SecurityRequirementObject {
-  [name: string]: [string];
+  [name: string]: string[];
 }
