@@ -3,19 +3,21 @@ import {
   ExampleObject,
   ExternalDocumentationObject,
   HeaderObject,
+  HeadersObject,
   InfoObject,
+  ISchemaObject,
   LinkObject,
   OpenAPIObject,
   ParameterObject,
   ReferenceObject,
   RequestBodyObject,
   ResponseObject,
-  SchemaObject,
   SecurityRequirementObject,
   SecuritySchemeObject,
   ServerObject,
   ServerVariableObject,
-  TagObject
+  TagObject,
+  XmlObject
 } from './types/OpenApi';
 
 function throwEx(errorMessage?: string): never {
@@ -50,9 +52,10 @@ interface Method {
   description?: string;
   externalDocs?: ExternalDocumentationObject;
   operationId?: string;
-  responses: Response[];
   parameters: Parameter[];
-
+  parameterBody?: ParameterBody;
+  responses: Response[];
+  // callbacks
   deprecated: boolean;
   security: SecurityRequirementsAlternatives;
   servers: Server[];
@@ -95,10 +98,6 @@ function parseServer(server: ServerObject): Server {
 }
 function parseServers(servers?: ServerObject[]): Server[] | undefined {
   return servers ? servers.map(parseServer) : undefined;
-}
-
-interface Schema {
-
 }
 
 interface Encoding {
@@ -164,8 +163,179 @@ function normalizeExamples(obj: {
   return examples;
 }
 
-function parseSchema(schema: SchemaObject): Schema {
-  return schema; // TODO
+interface SchemaBase {
+  nullable: boolean;
+  readOnly: boolean;
+  writeOnly: boolean;
+  xml: XmlObject;
+  externalDocs?: ExternalDocumentationObject;
+  example?: any;
+  deprecated: boolean;
+
+  title?: string;
+  enum?: any[];
+  allOf?: Schema[];
+  oneOf?: Schema[];
+  anyOf?: Schema[];
+  not?: Schema;
+  description?: string;
+  default?: any;
+}
+
+interface SchemaString extends SchemaBase {
+  type: "string";
+  format?: "byte" | "binary" | "date" | "date-time" | "password";
+  // constraints
+  maxLength?: number;
+  minLength?: number;
+  pattern?: string;
+}
+interface SchemaInteger extends SchemaBase {
+  type: "integer";
+  format?: "int32" | "int64";
+  // constraints
+  multipleOf?: number;
+  maximum?: number;
+  exclusiveMaximum: boolean;
+  minimum?: number;
+  exclusiveMinimum: boolean;
+}
+interface SchemaNumber extends SchemaBase {
+  type: "number";
+  format?: "float" | "double";
+  // constraints
+  multipleOf?: number;
+  maximum?: number;
+  exclusiveMaximum: boolean;
+  minimum?: number;
+  exclusiveMinimum: boolean;
+}
+interface SchemaObject extends SchemaBase {
+  type: "object";
+  properties: { [name: string]: Schema };
+  required: string[];
+  discriminator?: { propertyName: string; mapping?: { [discriminatorValue: string]: string } }; // TODO: make values schemas!
+  // constraints
+  additionalProperties?: Schema;
+  maxProperties?: number;
+  minProperties?: number;
+}
+interface SchemaArray extends SchemaBase {
+  type: "array";
+  items: Schema;
+  // constraints
+  maxItems?: number;
+  minItems?: number;
+  uniqueItems?: boolean;
+}
+interface SchemaBoolean extends SchemaBase {
+  type: "boolean";
+}
+interface SchemaNull extends SchemaBase {
+  type: "null";
+}
+
+type Schema = SchemaString | SchemaInteger | SchemaNumber | SchemaObject | SchemaArray | SchemaBoolean | SchemaNull;
+
+function parseSchemas(schemas?: ISchemaObject[]): Schema[] | undefined {
+  return schemas ? schemas.map(parseSchema) : undefined;
+}
+function parseSchemaEx(schema?: ISchemaObject): Schema | undefined {
+  return schema ? parseSchema(schema) : undefined;
+}
+function parseSchema(schema: ISchemaObject): Schema { // TODO: pre-caching to prevent circular references!
+  const result: SchemaBase = {
+    nullable: schema.nullable || false,
+    readOnly: schema.readOnly || false,
+    writeOnly: schema.writeOnly || false,
+    xml: schema.xml || {},
+    externalDocs: schema.externalDocs,
+    example: schema.example,
+    deprecated: schema.deprecated || false,
+
+    title: schema.title,
+    enum: schema.enum,
+    allOf: parseSchemas(schema.allOf),
+    oneOf: parseSchemas(schema.oneOf),
+    anyOf: parseSchemas(schema.anyOf),
+    not: parseSchemaEx(schema.not),
+    description: schema.description,
+    default: schema.default
+  };
+  const type = schema.type || "object";
+  switch (type) {
+    case "string":
+      return Object.assign(result, {
+        type: type,
+        format: schema.format as any,
+        // constraints
+        maxLength: schema.maxLength,
+        minLength: schema.minLength,
+        pattern: schema.pattern
+      });
+    case "integer":
+      return Object.assign(result, {
+        type: type,
+        format: schema.format as any,
+        // constraints
+        multipleOf: schema.multipleOf,
+        maximum: schema.maximum,
+        exclusiveMaximum: schema.exclusiveMaximum || false,
+        minimum: schema.minimum,
+        exclusiveMinimum: schema.exclusiveMinimum || false
+      });
+    case "number":
+      return Object.assign(result, {
+        type: type,
+        format: schema.format as any,
+        // constraints
+        multipleOf: schema.multipleOf,
+        maximum: schema.maximum,
+        exclusiveMaximum: schema.exclusiveMaximum || false,
+        minimum: schema.minimum,
+        exclusiveMinimum: schema.exclusiveMinimum || false
+      });
+    case "object":
+      const props = schema.properties || {};
+      const properties: { [name: string]: Schema } = {};
+      for (const propertyName of keys(props)) {
+        properties[propertyName] = parseSchema(props[propertyName]);
+      }
+
+      return Object.assign(result, {
+        type: type,
+        properties: properties,
+        required: schema.required || [],
+        discriminator: schema.discriminator,
+        additionalProperties: !schema.additionalProperties
+          ? undefined
+          : (schema.additionalProperties === true
+            ? parseSchema({})
+            : parseSchema(schema.additionalProperties as SchemaObject)),
+        // constraints
+        maxProperties: schema.maxProperties,
+        minProperties: schema.minProperties
+      });
+    case "array":
+      return Object.assign(result, {
+        type: type,
+        items: parseSchema(schema.items as ISchemaObject),
+        // constraints
+        maxItems: schema.maxItems,
+        minItems: schema.minItems,
+        uniqueItems: schema.uniqueItems
+      });
+    case "boolean":
+      return Object.assign(result, {
+        type: type
+      });
+    case "null":
+      return Object.assign(result, {
+        type: type
+      });
+    default:
+      throw new Error(`unknown type '${type}'`);
+  }
 }
 
 function normalizeFormat(location: "query" | "header" | "path" | "cookie", obj: {
@@ -211,6 +381,12 @@ function parseHeader(name: string, header: HeaderObject): Header {
   param.name = name;
   param.in = "header";
   return parseParameterBase(param);
+}
+
+function parseHeaders(headers?: HeadersObject): Header[] {
+  if (!headers) return [];
+  const headerNames = keys(headers);
+  return headerNames.map(name => parseHeader(name, headers[name] as HeaderObject));
 }
 
 function parseParameter(parameter: ParameterObject): Parameter {
@@ -267,14 +443,44 @@ function parseSecurityRequirements(securitySchemes: { [securityScheme: string]: 
   return securityAlternatives;
 }
 
+function getDefaultMediaType(schema: Schema): string {
+  return (
+    (schema.type === "string" && schema.format === "binary" ? "application/octet-stream" : undefined) ||
+    (["string", "number", "boolean", "integer", "null"].indexOf(schema.type || "") !== -1 ? "text/plain" : undefined) ||
+    (schema.type === "object" ? "application/json" : undefined) ||
+    (schema.type === "array" ? getDefaultMediaType(schema.items) : undefined) ||
+    throwEx(`unexpeced type '${schema.type}'`));
+}
+
 function parseContent(content: ContentObject): Content {
   const result: Content = {};
   for (const mediaType of keys(content)) {
     const contentObj = content[mediaType];
+    const schema = parseSchema(contentObj.schema || {});
+
+    // parse encoding
+    const encodings: { [property: string]: Encoding } = {};
+    if (contentObj.encoding && schema.type === "object") {
+      if (mediaType.startsWith("multipart/") || mediaType === "x-www-form-urlencoded") {
+        const props = schema.properties;
+        for (const encodedProp of keys(contentObj.encoding)) {
+          if (!(encodedProp in props)) throw new Error(`property '${encodedProp}' does not exist on type`);
+          const prop = props[encodedProp];
+          const encoding = contentObj.encoding[encodedProp];
+          encodings[encodedProp] = {
+            contentType: encoding.contentType || getDefaultMediaType(prop),
+            headers: parseHeaders(encoding.headers),
+            format: normalizeFormat("query", encoding),
+            allowReserved: encoding.allowReserved || false
+          };
+        }
+      }
+    }
+
     result[mediaType] = {
-      schema: parseSchema(contentObj.schema || {}),
-      encoding: {}, // TODO
-      examples: normalizeExamples(content)
+      schema: schema,
+      encoding: encodings,
+      examples: normalizeExamples(contentObj)
     };
   }
   return result;
@@ -370,11 +576,6 @@ export function run(openapiDefinition: OpenAPIObject): Model {
           if (responseKey === "default") responseKey = "XXX";
           if (!responseKey.match(/^[0-9X]{3}$/)) throw new Error(`invalid HTTP status code pattern '${responseKey}'`);
 
-          // headers
-          const headers = responseObject.headers || {};
-          const headerNames = keys(headers);
-          const headersAsParams = headerNames.map(name => parseHeader(name, headers[name] as HeaderObject));
-
           // TODO:
           // responseObject.content
 
@@ -386,7 +587,7 @@ export function run(openapiDefinition: OpenAPIObject): Model {
           responses.push({
             key: responseKey,
             description: responseObject.description,
-            headers: headersAsParams
+            headers: parseHeaders(responseObject.headers)
           });
         }
         // sort responses descending by significance
@@ -401,8 +602,7 @@ export function run(openapiDefinition: OpenAPIObject): Model {
           externalDocs: operationObject.externalDocs,
           operationId: operationObject.operationId,
           parameters: parameters,
-          requestBody: requestBody,
-
+          parameterBody: requestBody,
           responses: responses,
 
           deprecated: operationObject.deprecated || false,

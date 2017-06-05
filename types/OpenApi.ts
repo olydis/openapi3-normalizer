@@ -41,7 +41,7 @@ export interface ServerVariableObject extends ISpecificationExtension {
   description?: string;
 }
 export interface ComponentsObject extends ISpecificationExtension {
-  schemas?: { [schema: string]: SchemaObject };
+  schemas?: { [schema: string]: ISchemaObject };
   responses?: { [response: string]: ResponseObject };
   parameters?: { [parameter: string]: ParameterObject };
   examples?: { [example: string]: ExampleObject };
@@ -98,7 +98,7 @@ export interface ParameterObject extends ISpecificationExtension {
   style?: "matrix" | "label" | "form" | "simple" | "spaceDelimited" | "pipeDelimited" | "deepObject";
   explode?: boolean;
   allowReserved?: boolean;
-  schema?: SchemaObject | ReferenceObject;
+  schema?: ISchemaObject | ReferenceObject;
   examples?: { [mediatype: string]: ExampleObject | ReferenceObject; };
   example?: any;
   content?: ContentObject;
@@ -112,7 +112,7 @@ export interface ContentObject {
   [mediatype: string]: MediaTypeObject;
 }
 export interface MediaTypeObject extends ISpecificationExtension {
-  schema?: SchemaObject | ReferenceObject;
+  schema?: ISchemaObject | ReferenceObject;
   examples?: { [mediatype: string]: ExampleObject | ReferenceObject; };
   example?: ExampleObject | ReferenceObject;
   encoding?: EncodingObject;
@@ -121,10 +121,11 @@ export interface EncodingObject extends ISpecificationExtension {
   [property: string]: EncodingPropertyObject;
 }
 export interface EncodingPropertyObject {
-  contentType: string;
-  Headers: any;
-  style: string;
-  explode: boolean;
+  contentType?: string;
+  headers?: { [name: string]: HeaderObject };
+  style?: "matrix" | "label" | "form" | "simple" | "spaceDelimited" | "pipeDelimited" | "deepObject";
+  explode?: boolean;
+  allowReserved?: boolean;
 }
 export interface ResponsesObject extends ISpecificationExtension {
   default: ResponseObject | ReferenceObject;
@@ -178,9 +179,9 @@ export interface ExamplesObject {
 export interface ReferenceObject {
   $ref: string;
 }
-export interface SchemaObject extends ISpecificationExtension {
+export interface ISchemaObject extends ISpecificationExtension {
   nullable?: boolean;
-  discriminator?: string;
+  discriminator?: { propertyName: string; mapping?: { [discriminatorValue: string]: string } };
   readOnly?: boolean;
   writeOnly?: boolean;
   xml?: XmlObject;
@@ -190,24 +191,41 @@ export interface SchemaObject extends ISpecificationExtension {
   deprecated?: boolean;
 
   type?: string;
-  allOf?: SchemaObject | ReferenceObject;
-  oneOf?: SchemaObject | ReferenceObject;
-  anyOf?: SchemaObject | ReferenceObject;
-  not?: SchemaObject | ReferenceObject;
-  items?: SchemaObject | ReferenceObject;
-  properties?: SchemaObject | ReferenceObject;
-  additionalProperties?: SchemaObject | ReferenceObject;
+  allOf?: (ISchemaObject | ReferenceObject)[];
+  oneOf?: (ISchemaObject | ReferenceObject)[];
+  anyOf?: (ISchemaObject | ReferenceObject)[];
+  not?: (ISchemaObject | ReferenceObject);
+  items?: ISchemaObject | ReferenceObject;
+  properties?: { [name: string]: ISchemaObject | ReferenceObject };
+  additionalProperties?: boolean | ISchemaObject | ReferenceObject;
   description?: string;
   format?: string;
   default?: any;
+
+  title?: string;
+  multipleOf?: number;
+  maximum?: number;
+  exclusiveMaximum?: boolean;
+  minimum?: number;
+  exclusiveMinimum?: boolean;
+  maxLength?: number;
+  minLength?: number;
+  pattern?: string;
+  maxItems?: number;
+  minItems?: number;
+  uniqueItems?: boolean;
+  maxProperties?: number;
+  minProperties?: number;
+  required?: string[];
+  enum?: any[];
 }
 
 export interface XmlObject extends ISpecificationExtension {
-  name: string;
-  namespace: string;
-  prefix: string;
-  attribute: boolean;
-  wrapped: boolean;
+  name?: string;
+  namespace?: string;
+  prefix?: string;
+  attribute?: boolean;
+  wrapped?: boolean;
 }
 export type SecuritySchemeObject = SecuritySchemeObjectApiKey | SecuritySchemeObjectHttp | SecuritySchemeObjectOAuth2 | SecuritySchemeObjectOpenIdConnect;
 export interface SecuritySchemeObjectApiKey extends ISpecificationExtension {
