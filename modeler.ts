@@ -506,7 +506,7 @@ export function run(openapiDefinition: OpenAPIObject): Model {
   // externalDocs
   // TODO: openapiDefinition.externalDocs
 
-  // types
+  // types (maybe a list of declared stuff!?)
   // TODO: openapiDefinition.components
 
   // operations
